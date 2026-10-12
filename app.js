@@ -20,6 +20,7 @@ let recognition;
 let finalTranscript = '';
 let speechRecognitionActive = false;
 let recognitionBaseTranscript = '';
+let transcriberPromise;
 
 const examples = [
   '我：你刚才答应我今天早点回来，怎么又这么晚？\n对方：我临时有个会要开，不是故意不回你的。\n我：我知道你忙，可是等不到消息的时候我会很担心。\n对方：对不起，我应该早点告诉你。下次我有变化就给你发消息。',
@@ -77,6 +78,7 @@ function installAudio(file, buffer, blobUrl, preserveAnnotations = false, projec
   selectedRange = null;
   $('#dropzone').classList.add('hidden'); $('#audioFileRow').classList.remove('hidden'); $('#audioPlayerWrap').classList.remove('hidden');
   $('#fileName').textContent = file.name || '录音'; $('#fileDetails').textContent = `${formatDuration(buffer.duration)} · 已在本地读取`;
+  $('#transcribeAudio').disabled = false; $('#transcriptionStatus').textContent = '可将录音转写为中文，再生成语义与情绪分析。';
   audioPlayer.src = blobUrl; estimateSignal(buffer); renderAnnotations(); updateSelectionUI(); setTab('upload'); setStatus('音频已就绪。拖动右侧波形创建情绪标注。'); persistWorkspace(); refreshProjectLibrary(); updateTrainingSummary();
 }
 audioFile.addEventListener('change', async () => {
@@ -85,11 +87,55 @@ audioFile.addEventListener('change', async () => {
   try { const buffer = await decodeAudio(file); installAudio(file, buffer, URL.createObjectURL(file)); }
   catch (error) { setStatus('无法读取此音频格式，请尝试 WAV、MP3、M4A 或 OGG。'); }
 });
-$('#removeAudio').addEventListener('click', () => { audioPlayer.pause(); if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; audioPlayer.removeAttribute('src'); audioFile.value = ''; audioBuffer = null; currentAudioBlob = null; const oldProjectId = currentProjectId; currentProjectId = null; annotations = []; selectedRange = null; $('#audioPlayerWrap').classList.add('hidden'); $('#audioFileRow').classList.add('hidden'); $('#dropzone').classList.remove('hidden'); $('#durationStat').textContent = $('#volumeStat').textContent = $('#pitchStat').textContent = '—'; $('#signalNote').innerHTML = '<span>i</span> 拖动波形上的区间即可截取；音频与标注保存在此浏览器。'; showWaveform(); updateSelectionUI(); renderAnnotations(); if (oldProjectId) deleteProject(oldProjectId); setStatus(''); });
+$('#removeAudio').addEventListener('click', () => { audioPlayer.pause(); if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; audioPlayer.removeAttribute('src'); audioFile.value = ''; audioBuffer = null; currentAudioBlob = null; const oldProjectId = currentProjectId; currentProjectId = null; annotations = []; selectedRange = null; $('#transcribeAudio').disabled = true; $('#transcriptionStatus').textContent = '首次转写需要联网下载语音模型；音频在浏览器本地处理。'; $('#audioPlayerWrap').classList.add('hidden'); $('#audioFileRow').classList.add('hidden'); $('#dropzone').classList.remove('hidden'); $('#durationStat').textContent = $('#volumeStat').textContent = $('#pitchStat').textContent = '—'; $('#signalNote').innerHTML = '<span>i</span> 拖动波形上的区间即可截取；音频与标注保存在此浏览器。'; showWaveform(); updateSelectionUI(); renderAnnotations(); if (oldProjectId) deleteProject(oldProjectId); setStatus(''); });
 const dropzone = $('#dropzone');
 ['dragenter', 'dragover'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.style.borderColor = '#83a68b'; }));
 ['dragleave', 'drop'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.style.borderColor = ''; }));
 dropzone.addEventListener('drop', e => { const file = e.dataTransfer.files?.[0]; if (!file) return; const transfer = new DataTransfer(); transfer.items.add(file); audioFile.files = transfer.files; audioFile.dispatchEvent(new Event('change')); });
+
+function resampleMono(buffer, targetRate = 16000) {
+  const sourceRate = buffer.sampleRate; const length = Math.ceil(buffer.length * targetRate / sourceRate); const mono = new Float32Array(length);
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) => buffer.getChannelData(channel));
+  for (let i = 0; i < length; i++) {
+    const sourcePosition = i * sourceRate / targetRate; const left = Math.floor(sourcePosition); const right = Math.min(left + 1, buffer.length - 1); const fraction = sourcePosition - left;
+    let sample = 0; for (const channel of channels) sample += channel[left] + (channel[right] - channel[left]) * fraction;
+    mono[i] = sample / channels.length;
+  }
+  return mono;
+}
+async function getChineseTranscriber() {
+  if (!transcriberPromise) {
+    transcriberPromise = import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1')
+      .then(({ pipeline }) => pipeline('automatic-speech-recognition', 'onnx-community/whisper-tiny', {
+        progress_callback: event => {
+          if (event.status === 'progress' && Number.isFinite(event.progress)) $('#transcriptionStatus').textContent = `正在下载语音模型 ${Math.round(event.progress)}%…`;
+          else if (event.status === 'initiate') $('#transcriptionStatus').textContent = '正在准备中文语音模型…';
+        }
+      }))
+      .catch(error => { transcriberPromise = null; throw error; });
+  }
+  return transcriberPromise;
+}
+$('#transcribeAudio').addEventListener('click', async () => {
+  if (!audioBuffer) return;
+  const sourceBuffer = audioBuffer; const button = $('#transcribeAudio'); button.disabled = true; button.textContent = '正在转写…';
+  try {
+    if (sourceBuffer.duration > 1800) throw new Error('单次转写最多支持 30 分钟音频。');
+    $('#transcriptionStatus').textContent = '正在加载本地语音识别模型；首次使用会从 Hugging Face 下载模型文件。';
+    const transcriber = await getChineseTranscriber();
+    $('#transcriptionStatus').textContent = '正在本机识别中文语音…较长录音可能需要一些时间。';
+    const output = await transcriber(resampleMono(sourceBuffer), { language: 'chinese', task: 'transcribe', chunk_length_s: 30, stride_length_s: 5 });
+    if (audioBuffer !== sourceBuffer) { $('#transcriptionStatus').textContent = '音频已更换，本次转写结果已忽略。'; return; }
+    const recognized = String(output?.text || '').trim();
+    if (!recognized) throw new Error('没有识别到清晰语音，请检查录音或手动补充转写。');
+    const taggedText = `录音转写：${recognized}`; const transcript = $('#transcript');
+    if (!transcript.value.includes(recognized)) transcript.value = transcript.value.trim() ? `${transcript.value.trim()}\n${taggedText}` : taggedText;
+    $('#charCount').textContent = `${transcript.value.length} 字`; $('#transcriptionStatus').textContent = '转写完成。请核对文字，并给不同说话人的发言加上「我：」「对方：」等标签，再生成语义分析。';
+    setStatus('中文语音已转写，可生成语义分析。');
+  } catch (error) {
+    $('#transcriptionStatus').textContent = error.message || '转写失败，请检查网络连接，或手动粘贴录音内容。';
+  } finally { button.disabled = !audioBuffer; button.textContent = '重新转写'; }
+});
 
 function startRecognition() {
   const API = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -139,11 +185,52 @@ function parseTurns(text) {
   const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean); const found = [];
   for (const line of lines) {
     const match = line.match(/^([^：:]{1,12})[：:、]\s*(.+)$/);
-    if (match) found.push({ speaker: match[1], text: match[2] }); else found.push({ speaker: found.length ? '对方' : '我', text: line });
+    if (match) found.push({ speaker: match[1] === '录音转写' ? '未区分说话人' : match[1], text: match[2] }); else found.push({ speaker: found.length ? '对方' : '我', text: line });
   }
   return found;
 }
 function countHits(text, words) { return words.reduce((n, word) => n + (text.includes(word) ? 1 : 0), 0); }
+const semanticTopicRules = [
+  ['时间与联系', ['时间','迟到','早点','晚回','消息','联系','回复','电话','等你','见面']],
+  ['家务与照料', ['家务','做饭','买菜','打扫','孩子','接送','照顾','分工','家里']],
+  ['工作与压力', ['工作','上班','开会','同事','项目','加班','忙','压力','累']],
+  ['金钱与安排', ['钱','花费','消费','存款','预算','账单','买东西','经济']],
+  ['误会与承诺', ['误会','吵架','争吵','忘了','答应','承诺','说好的','每次都','总是']],
+  ['关心与陪伴', ['关心','陪','在乎','想你','安全感','支持','理解','需要你']]
+];
+function analyzeSemantics(turns) {
+  const content = turns.map(turn => turn.text).join('');
+  const rankedTopics = semanticTopicRules.map(([name, words]) => ({ name, score: countHits(content, words) })).filter(item => item.score > 0).sort((a, b) => b.score - a.score);
+  const topics = rankedTopics.length ? rankedTopics.slice(0, 2).map(item => item.name) : ['日常沟通'];
+  const requests = turns.filter(turn => /希望|需要|能不能|可不可以|可否|能否|请你|我想|我希望/.test(turn.text));
+  const feelings = turns.filter(turn => /我觉得|我感到|我很|让我|担心|在意|委屈|有点累|不舒服/.test(turn.text));
+  const actions = turns.filter(turn => /我会|我来|下次|我们一起|可以，我|我答应|已经安排|会记得|按时/.test(turn.text));
+  const apologies = turns.filter(turn => /对不起|抱歉|我理解|你说得对|我没想到/.test(turn.text));
+  const keyLine = (items) => items[0] ? `${items[0].speaker}：「${items[0].text.slice(0, 74)}${items[0].text.length > 74 ? '…' : ''}」` : '';
+  let title = rankedTopics.length ? `对话主要围绕${topics.join('、')}` : '当前内容以日常交流为主';
+  let summary;
+  if (requests.length && actions.length) {
+    const sameSpeakerOnly = requests[0].speaker === actions[0].speaker;
+    summary = `${topics.join('、')}是较明显的话题。${requests[0].speaker}提出了具体需要；${sameSpeakerOnly ? '录音中也出现了后续行动的表达' : `${actions[0].speaker}随后提到行动或约定`}。可以再确认时间、分工等细节，判断双方是否理解一致。`;
+  } else if (requests.length) {
+    summary = `${topics.join('、')}是较明显的话题。对话中有人提出了希望或请求；目前转写里还没有明显的具体行动约定，可以留意对方是否回应了这项需要。`;
+  } else if (feelings.length) {
+    summary = `${topics.join('、')}是较明显的话题。说话者表达了感受或担忧，但转写中没有明显的直接请求；把在意的事情和希望对方做什么说具体，能帮助对方理解。`;
+  } else if (actions.length || apologies.length) {
+    summary = `${topics.join('、')}是较明显的话题。转写里出现了道歉、理解或行动意愿；可以把后续安排说清楚，并在之后确认是否落实。`;
+  } else {
+    summary = `目前识别到的主要内容与${topics.join('、')}有关。没有足够清晰的请求或行动约定可供归纳；请核对转写，并补充每位说话人的发言。`;
+  }
+  const needs = requests.length ? requests.slice(0, 2).map(keyLine) : feelings.slice(0, 2).map(keyLine);
+  const responseItems = [...actions, ...apologies].slice(0, 2).map(keyLine);
+  return {
+    title,
+    summary,
+    topics: topics.join('、'),
+    needs: needs.length ? needs : ['暂未识别到明确请求或感受'],
+    actions: responseItems.length ? responseItems : ['暂未识别到明确回应或行动约定']
+  };
+}
 function analyze(text, signal) {
   const turns = parseTurns(text); const all = turns.map(t => t.text).join('');
   const metrics = Object.entries(lexicon).map(([name, words]) => ({ name, score: countHits(all, words), words }));
@@ -165,10 +252,11 @@ function analyze(text, signal) {
   else if (care > tense + 1) { title = '整体较愿意靠近，仍有合作空间'; summary = '对话中能看到关心、道歉或一起解决问题的表达。把可执行的小约定说清楚，有助于把善意变成持续的行动。'; }
   else { title = '整体偏平和，双方仍在摸索彼此'; summary = '当前表达里的情绪信号不算强烈。可以更具体地说出各自的感受、期待和下一步，避免只讨论谁对谁错。'; }
   const speakers = [...new Set(turns.map(t => t.speaker))]; const firstSpeaker = speakers[0] || '我'; const secondSpeaker = speakers.find(s => s !== firstSpeaker) || '对方';
-  const asks = turns.filter(t => countHits(t.text, lexicon.需要) > 0).length;
+  const askingTurns = turns.filter(t => countHits(t.text, lexicon.需要) > 0); const asks = askingTurns.length;
   const apology = turns.filter(t => /对不起|抱歉|我理解|你说得对/.test(t.text)).length;
   const dismiss = turns.filter(t => /别说了|随便你|你想多了|这有什么/.test(t.text)).length;
-  const responds = turns.length >= 3 && (apology > 0 || turns.some(t => /可以|我会|下次|我来/.test(t.text)));
+  const responseTurns = turns.filter(t => /可以|我会|下次|我来|对不起|抱歉|我理解|你说得对/.test(t.text));
+  const responds = responseTurns.some(reply => askingTurns.some(ask => ask.speaker !== reply.speaker));
   let relationTitle = '从表达需要开始观察回应'; let relationText = '目前能看到表达和回应，但仅凭这段内容无法确定关系模式。留意需求是否被听到、回应是否具体，以及后续行动能否兑现。'; let mapClass = '';
   if (dismiss > 0) { relationTitle = '有一处回应可能让感受落空'; relationText = '出现了快速否定或结束话题的表达。可以试着先确认对方的感受，再讨论事实和分工。'; mapClass = 'distant'; }
   else if (asks > 0 && responds) { relationTitle = '表达需要后出现了回应'; relationText = '对话里能看到具体请求和一定的回应、道歉或行动意愿。这是继续协商的起点，之后可以约定具体时间和做法。'; mapClass = 'connected'; }
@@ -179,11 +267,16 @@ function analyze(text, signal) {
   if (dismiss || defensive.score) advice.push('先确认彼此理解的是同一件事，再商量下一步；如果情绪很满，可以约一个稍后继续聊的时间。');
   if (!advice.length) advice.push('把已经达成的共识整理成一个小行动，并约好什么时候再确认进展。');
   if (turns.length <= 1) advice.push('如果是双人关系分析，请用不同说话人标记各自的发言，这样更容易观察互动。');
-  return { title, summary, emotions, relationTitle, relationText, advice: advice.slice(0, 3), speakers: [firstSpeaker, secondSpeaker], mapClass, turnCount: turns.length };
+  return { title, summary, semantics: analyzeSemantics(turns), emotions, relationTitle, relationText, advice: advice.slice(0, 3), speakers: [firstSpeaker, secondSpeaker], mapClass, turnCount: turns.length };
 }
 function renderResult(result) {
   $('#emptyState').classList.add('hidden'); $('#resultContent').classList.remove('hidden');
   $('#overallTitle').textContent = result.title; $('#overallSummary').textContent = result.summary;
+  const semantic = result.semantics || analyzeSemantics([]);
+  $('#semanticTitle').textContent = semantic.title; $('#semanticSummary').textContent = semantic.summary; $('#semanticTopics').textContent = semantic.topics;
+  for (const [selector, values] of [['#semanticNeeds', semantic.needs], ['#semanticActions', semantic.actions]]) {
+    const list = $(selector); list.replaceChildren(); values.forEach(value => { const item = document.createElement('li'); item.textContent = value; list.append(item); });
+  }
   const list = $('#emotionList'); list.innerHTML = '';
   result.emotions.forEach(e => { const row = document.createElement('div'); row.className = 'emotion-row'; row.innerHTML = `<span class="emotion-label"></span><div class="emotion-track"><div class="emotion-fill"></div></div><span class="emotion-score"></span>`; row.querySelector('.emotion-label').textContent = e.name; row.querySelector('.emotion-fill').style.width = `${Math.max(e.value, 10)}%`; row.querySelector('.emotion-score').textContent = `${e.value}%`; list.append(row); });
   $('#relationshipTitle').textContent = result.relationTitle; $('#relationshipText').textContent = result.relationText; $('#relationshipVisual').className = `relationship-visual ${result.mapClass}`; $('#relationshipVisual').querySelectorAll('span')[0].textContent = result.speakers[0]; $('#relationshipVisual').querySelectorAll('span')[1].textContent = result.speakers[1];
@@ -192,7 +285,7 @@ function renderResult(result) {
 $('#analyzeButton').addEventListener('click', () => {
   const transcript = $('#transcript').value.trim(); const signal = audioBuffer ? estimateSignal(audioBuffer) : null;
   if (!transcript && !signal) { setStatus('请先录制或上传音频，或添加一段对话文本。'); return; }
-  if (!transcript && signal) { const result = analyze('', signal); result.title = '已读到声音线索，补充文本后可继续分析'; result.summary = '当前只分析了音量和音高变化，无法从声音特征单独判断说话内容、具体情绪或人物关系。请在「对话文本」中粘贴转写内容，让互动分析更有依据。'; result.relationTitle = '需要对话内容才能观察关系互动'; result.relationText = '语音信号不能说明谁说了什么，也无法判断双方如何回应。补充带有说话人标记的文本后，可继续查看互动线索。'; result.advice = ['可以先转写这段对话，并标注每句话是谁说的。']; renderResult(result); setStatus(''); $('#resultsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+  if (!transcript && signal) { const result = analyze('', signal); result.title = '已读到声音线索，补充文本后可继续分析'; result.summary = '当前只分析了音量和音高变化，无法从声音特征单独判断说话内容、具体情绪或人物关系。请点击「中文转写」，或在「对话文本」中粘贴转写内容，让语义分析更有依据。'; result.semantics = { title: '需要中文转写才能理解对话内容', summary: '音量和音高变化不能说明说了什么。先转写录音，再核对文字并标注说话人，页面就能继续梳理话题、诉求和回应。', topics: '暂无转写文本', needs: ['转写录音或补充对话文字'], actions: ['标注不同说话人的发言以查看互动'] }; result.relationTitle = '需要对话内容才能观察关系互动'; result.relationText = '语音信号不能说明谁说了什么，也无法判断双方如何回应。补充带有说话人标记的文本后，可继续查看互动线索。'; result.advice = ['可以先点击「中文转写」，再给不同说话人的句子加上标记。']; renderResult(result); setStatus(''); $('#resultsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   const result = analyze(transcript, signal); renderResult(result); setStatus(''); $('#resultsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 $('#clearResults').addEventListener('click', () => { $('#resultContent').classList.add('hidden'); $('#emptyState').classList.remove('hidden'); setStatus(''); });
