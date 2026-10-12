@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f5f5f2" />
+  <title>声语 · 对话情绪观察</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="segments.css" />
+  <link rel="stylesheet" href="taxonomy.css" />
+  <link rel="stylesheet" href="taxonomy-overrides.css" />
+  <link rel="stylesheet" href="model.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#top" aria-label="声语首页">
+        <span class="brand-mark"><span></span><span></span><span></span><span></span></span>
+        <span>声语<span class="brand-dot">.</span></span>
+      </a>
+      <div class="side-label">工作台</div>
+      <a class="nav-item active" href="#workspace"><span class="nav-icon">◉</span>对话分析</a>
+      <a class="nav-item" href="#how-it-works"><span class="nav-icon">◷</span>分析说明</a>
+      <div class="sidebar-bottom">
+        <div class="privacy-card"><span class="privacy-icon">⌑</span><div><strong>本地优先</strong><p>音频特征本地计算；实时转写由浏览器语音服务处理。</p></div></div>
+        <div class="sidebar-foot">让每一次倾听<br />多一点理解。</div>
+      </div>
+    </aside>
+
+    <main id="top" class="main-content">
+      <header class="topbar">
+        <div class="breadcrumbs">工作台 <span>/</span> 对话分析</div>
+        <div class="top-actions"><span class="local-badge"><i></i> 本地分析</span><span class="avatar">聆</span></div>
+      </header>
+
+      <section class="intro" id="workspace">
+        <div class="eyebrow"><span></span> LISTEN CLOSER</div>
+        <h1>听见情绪，<em>读懂对话。</em></h1>
+        <p>从语气和表达中捕捉情绪线索，看看彼此如何回应，并找到更舒服的沟通方式。</p>
+      </section>
+
+      <section class="workspace-grid">
+        <div class="left-column">
+          <article class="panel input-panel">
+            <div class="panel-heading"><div><span class="step">01</span><div><h2>添加一段对话</h2><p>录一段语音、上传音频，或粘贴对话文本。</p></div></div><span class="optional-tag">任选一种</span></div>
+            <div class="input-tabs" role="tablist" aria-label="输入方式">
+              <button class="tab active" data-tab="record" role="tab"><span>◉</span> 录音</button>
+              <button class="tab" data-tab="upload" role="tab"><span>↥</span> 上传音频</button>
+              <button class="tab" data-tab="text" role="tab"><span>▤</span> 对话文本</button>
+            </div>
+            <div class="tab-content active" id="tab-record">
+              <div class="record-box">
+                <div class="record-orb" id="recordOrb"><span>♫</span></div>
+                <div class="record-copy"><strong id="recordTitle">准备好时，开始录音</strong><p id="recordHint">录音时可同步尝试语音转写，建议在安静环境中使用。</p></div>
+                <button class="button primary record-button" id="recordButton"><span class="record-dot"></span><span>开始录音</span></button>
+              </div>
+              <div class="live-transcript" id="liveTranscript">录音会尝试使用浏览器语音转写服务。其数据处理方式取决于浏览器；也可以不录音，直接粘贴文本分析。</div>
+            </div>
+            <div class="tab-content" id="tab-upload">
+              <label class="dropzone" id="dropzone" for="audioFile"><input id="audioFile" type="file" accept="audio/*" /><span class="upload-icon">↑</span><strong>拖放音频到这里，或 <u>浏览文件</u></strong><small>支持常见音频格式，文件仅在本地处理</small></label>
+              <div class="audio-file-row hidden" id="audioFileRow"><span class="file-icon">♫</span><div class="file-meta"><strong id="fileName">audio.mp3</strong><span id="fileDetails">等待分析</span></div><button class="text-button" id="removeAudio">移除</button></div>
+              <div class="audio-player hidden" id="audioPlayerWrap"><audio id="audioPlayer" controls></audio></div>
+            </div>
+            <div class="tab-content" id="tab-text">
+              <div class="transcript-label"><label for="transcript">对话内容</label><span>建议每人一行，例如「我：……」「对方：……」</span></div>
+              <textarea id="transcript" placeholder="我：你刚才说好的，怎么又忘了？&#10;对方：我今天真的太忙了，没顾上。&#10;我：我不是第一次提醒你了。" spellcheck="false"></textarea>
+              <div class="text-footer"><span id="charCount">0 字</span><button class="text-button" id="loadExample">填入示例对话 ↗</button></div>
+            </div>
+            <div class="panel-actions"><span class="microcopy"><span>✳</span> 分析结果是沟通参考，不是心理诊断</span><button class="button analyze-button" id="analyzeButton"><span>生成对话洞察</span><span>→</span></button></div>
+            <div class="status-message" id="statusMessage" role="status"></div>
+          </article>
+
+          <article class="panel results-panel" id="resultsPanel">
+            <div class="panel-heading results-heading"><div><span class="step">02</span><div><h2>对话洞察</h2><p>基于当前内容生成的情绪与互动线索。</p></div></div><button id="clearResults" class="icon-button" title="清空结果">↻</button></div>
+            <div class="empty-state" id="emptyState"><div class="empty-illustration"><span>◖</span><i>〰</i><b>◗</b></div><strong>一段对话，值得被认真听见</strong><p>添加录音、音频或对话文本，<br />这里会呈现情绪变化和相处线索。</p></div>
+            <div class="result-content hidden" id="resultContent">
+              <div class="result-summary"><div class="summary-icon">✳</div><div><span class="result-kicker">整体氛围</span><h3 id="overallTitle">有些紧绷，也还有沟通空间</h3><p id="overallSummary"></p></div></div>
+              <div class="result-section"><div class="section-title"><h3>情绪线索</h3><span>文本表达 + 语音特征</span></div><div class="emotion-list" id="emotionList"></div></div>
+              <div class="result-section"><div class="section-title"><h3>互动方式</h3><span>观察彼此的回应</span></div><div class="relationship-card"><div class="relationship-visual" id="relationshipVisual"><span>我</span><i>↔</i><span>对方</span></div><div><strong id="relationshipTitle"></strong><p id="relationshipText"></p></div></div></div>
+              <div class="result-section advice-section"><div class="section-title"><h3>可以试试这样说</h3><span>更清晰，也更容易被听见</span></div><div id="adviceList" class="advice-list"></div></div>
+              <div class="result-note">此版本使用词语匹配和简化音频特征规则；百分比表示线索强度，不代表情绪概率。它不能代替当事人的真实感受，关系结论请结合具体背景理解。</div>
+            </div>
+          </article>
+        </div>
+
+        <aside class="right-column">
+          <article class="panel audio-panel"><div class="mini-heading"><span class="mini-icon sound-icon">〰</span><div><h3>语音分段与标注</h3><p>拖动波形选择片段，再为它添加情绪标签</p></div></div><div class="project-library"><label for="projectSelector">本地录音库</label><select id="projectSelector" disabled><option>还没有录音</option></select><span id="projectCount">音频与标注保存在当前浏览器</span></div><div class="waveform" id="waveform" aria-label="音频波形"><span class="wave-placeholder">添加录音或音频后显示波形</span></div><div class="audio-stats"><div><span>时长</span><strong id="durationStat">—</strong></div><div><span>平均音量</span><strong id="volumeStat">—</strong></div><div><span>音高变化</span><strong id="pitchStat">—</strong></div></div><div class="signal-note" id="signalNote"><span>i</span> 拖动波形上的区间即可截取；音频与标注保存在此浏览器。</div>
+            <div class="segment-editor" id="segmentEditor"><div class="segment-range"><div><span>选中区间</span><strong id="selectionRange">—</strong></div><button id="playSelection" class="mini-action" disabled>▶ 试听</button></div><div class="segment-fields"><label>情绪标签<select id="emotionLabel"><option value="neutral">平静 neutral</option><option value="happy">开心 happy</option><option value="sad">难过 sad</option><option value="angry">愤怒 angry</option><option value="anxious">焦虑 anxious</option><option value="calm">平和 calm</option><option value="disgust">厌恶 disgust</option><option value="fear">害怕 fear</option><option value="other">其他 other</option></select></label><label>说话人<select id="speakerLabel"><option value="speaker_1">说话人 A</option><option value="speaker_2">说话人 B</option><option value="unknown">未知</option></select></label><label>把握程度<select id="confidenceLabel"><option value="high">确定</option><option value="medium">一般</option><option value="low">不确定</option></select></label></div><details class="taxonomy-manager"><summary>配置我的情绪标准</summary><div id="builtInEmotionList" class="custom-emotion-list"></div><div class="taxonomy-form"><input id="customEmotionCode" maxlength="24" placeholder="英文代码，如 excited" /><input id="customEmotionName" maxlength="16" placeholder="中文标签，如 兴奋" /><textarea id="customEmotionDefinition" maxlength="160" placeholder="标注定义：哪些可听线索下使用此标签"></textarea><button id="addCustomEmotion" class="mini-action">＋ 添加标签标准</button></div><div id="customEmotionList" class="custom-emotion-list"></div><p>新增标签会写入本地字典和导出清单；请先约定清晰定义，保持每条样本用同一套标准。</p></details><label class="segment-note-label">备注（可选）<input id="segmentNote" type="text" maxlength="160" placeholder="例如：反讽、哭腔、背景噪声" /></label><button class="button primary add-segment-button" id="addSegment" disabled>＋ 保存此标注</button><div class="segment-hint" id="segmentHint">先载入音频，再在波形上拖出一段区间。</div></div>
+            <div class="annotation-header"><strong>已标注片段 <span id="segmentCount">0</span></strong><button id="exportDataset" class="mini-action" disabled>导出当前录音 ↥</button></div><div class="segment-list" id="segmentList"><div class="segment-empty">添加标签后，片段会显示在这里。</div></div><div class="dataset-note">导出包包含独立 WAV 片段、JSONL/CSV 标签清单和标签字典，可用于后续训练与复核。</div>
+            <div class="model-trainer"><div class="trainer-title"><div><strong>本地情绪模型</strong><span>从录音库中的人工标注训练</span></div><span class="local-model-badge">仅本地</span></div><div class="model-explainer">提取 Log-Mel 频谱统计特征，训练轻量多分类模型。原始音频不会上传。验证按片段抽样，不隔离说话人，分数可能偏高。</div><div class="training-counts" id="trainingCounts">加载标注库后显示类别样本数</div><div class="model-actions"><button id="trainModel" class="button primary" disabled>训练 / 更新模型</button><button id="exportModel" class="mini-action" disabled>导出模型 JSON</button></div><div class="model-status" id="modelStatus">至少需要 2 种情绪、每类 2 段标注。</div><div class="model-prediction"><div class="prediction-head"><strong>预测选中片段</strong><button id="predictSelection" class="mini-action" disabled>开始预测</button></div><div id="predictionResult" class="prediction-result">训练并保存模型后，可选择上方音频片段进行本地预测。</div></div></div>
+          </article>
+          <article class="panel relation-panel"><div class="mini-heading"><span class="mini-icon relation-icon">⌁</span><div><h3>关系观察</h3><p>关注互动，而非给关系贴标签</p></div></div><div class="relationship-map"><div class="person person-a"><span>我</span><small>表达感受</small></div><div class="map-line"><i></i><i></i><i></i></div><div class="person person-b"><span>对方</span><small>回应方式</small></div></div><p class="relation-caption">试着留意：谁在提出需要？对方如何回应？有没有被理解的时刻？</p></article>
+          <article class="panel tip-panel" id="how-it-works"><span class="tip-spark">✳</span><div><h3>一个小提醒</h3><p>情绪不是“好”或“坏”。我们会描述对话中可见的线索，并提供一种沟通尝试，你可以根据真实情境调整。</p></div></article>
+        </aside>
+      </section>
+      <footer class="page-footer">声语 · 以理解为起点 <span>音频与标注保存在当前浏览器</span></footer>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

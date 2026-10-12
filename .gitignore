@@ -1,0 +1,13 @@
+# User audio and locally exported training data
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.webm
+*.zip
+*emotion-model*.json
+
+# Local development artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
